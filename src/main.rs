@@ -19,26 +19,41 @@ impl Model {
         let center = perceived_center(&self.boids);
         let velocity = perceived_velocity(&self.boids);
         let length = self.boids.len() as f32;
+        
         let boids = self.boids.clone();
         let collision = collision_avoidance(&boids);
 
         for boid in &mut self.boids {
             let c =  center/length - boid.position;
-            boid.velocity += c  * deltat * 2.; 
+            boid.velocity += c  * deltat * 0.05; 
         }
         for boid in & mut self.boids {
-            boid.velocity += (( velocity - boid.velocity) / (length - 1.0)) / 100.0 * deltat;
+            let mut umgebende = Vec::new();
+            
+
+            for individual in &boids {
+                    if (individual.position - boid.position).magnitude() < 150.0 { 
+                        umgebende.push(individual.clone());  
+                }
+            }
+
+            let velocity = perceived_velocity(&umgebende);
+            boid.velocity += (( velocity - boid.velocity) / (length - 1.0)) / 10.0 * deltat;
         }
         for index in 0..self.boids.len() {
-            self.boids[index].velocity += collision[index] * deltat * 10.0;
+            self.boids[index].velocity += collision[index] * deltat * 40.0;
         }
         for boid in &mut self.boids {
-            boid.velocity -= boid.position / 500.0;
+
+            boid.velocity -= boid.position / 5000.0;
         }
         
         for boid in &mut self.boids {
             if boid.velocity.magnitude() > 100. {
-                boid.velocity *= 0.95;
+                boid.velocity *= 0.99;
+            }
+            if boid.velocity.magnitude() < 30. {
+                boid.velocity *= 1.1;
             }
         }
         
@@ -49,7 +64,7 @@ impl Model {
         }
     }
     fn control_update(&mut self) {
-        let mut number = 0 ;
+        let mut number = 1 ;
         for boid in &self.boids {
             send_boid(&boid.position, &self.sender, number);
             number += 1;
@@ -59,11 +74,18 @@ impl Model {
 }
 
 fn send_boid(pos: &Vector2, control: &osc::Sender<osc::Connected> , number: i32) {
-    let osc_addr = format!("/boid/position {}", number);
-    let args = vec![osc::Type::Float(pos.x), osc::Type::Float(pos.y)];
-    let packet = (osc_addr, args);
+    let osc_addr1 = format!("/boid/angle{}", number);
+    let osc_addr2 = format!("/boid/length{}", number);
+    let angle = pos.y.atan2(pos.x);
+    let length = pos.magnitude() as f32;
+    
 
-    control.send(packet).ok();
+    let arg1 = vec![osc::Type::Float(angle)];
+    let arg2 = vec![osc::Type::Float(length)];
+    let packet1 = (osc_addr1, arg1);
+    let packet2 = (osc_addr2, arg2);
+    control.send(packet1).ok();
+    control.send(packet2).ok();
 }
 
 fn v2(a: f32, b: f32) -> Vector2 {
@@ -79,14 +101,14 @@ fn draw_boid(pos: &Vector2, velocity: &Vector2, draw: &Draw) {
 
 
 fn spawn_boids() -> Vec<Boid> {
-    let number = 50;
+    let number = 15;
     let mut position = v2(0.0,0.0); 
     let mut velocity = v2(0.0,0.0); 
     let mut rng = rand::thread_rng();
     let mut vec = Vec::new();
     
 
-    for i in 1..number {
+    for i in 0..number {
         position = v2(rng.gen_range(-1000.0,1000.0),rng.gen_range(-1000.0,1000.0));
         velocity = v2(rng.gen_range(-1000.0,1000.0),rng.gen_range(-1000.0,1000.0));
         // insert into model vector
@@ -129,8 +151,8 @@ fn collision_avoidance(schwarm: &Vec<Boid>) -> Vec<Vector2> {
         let mut direction = Vector2::new(0.0,0.0);
         for individual in schwarm {
             if ! std::ptr::eq(boid, individual) {
-                if (individual.position - boid.position).magnitude() < 500.0 { 
-                    direction -= (individual.position - boid.position)/(individual.position - boid.position).magnitude(); // stärker je näher
+                if (individual.position - boid.position).magnitude() < 50.0 { 
+                    direction -= (individual.position - boid.position)*(1./(individual.position - boid.position).magnitude()); // stärker je näher
                 }
             }
         }
@@ -142,8 +164,10 @@ fn collision_avoidance(schwarm: &Vec<Boid>) -> Vec<Vector2> {
 
     
 
+    
+
 fn control() -> osc::Sender<osc::Connected> {
-    let port = 1234;
+    let port = 5510;
     let target_addr = format!("{}:{}", "127.0.0.1", port);
 
     let sender = osc::sender()
